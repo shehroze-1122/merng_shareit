@@ -1,5 +1,6 @@
 const { UserInputError } = require('apollo-server')
 const { AuthenticationError } = require('apollo-server');
+const { subscribe } = require('graphql');
 
 const postModel = require('../../models/Post.js')
 const checkAuth = require('../../utils/verify-auth');
@@ -36,7 +37,10 @@ module.exports = {
         createPost: async (_, { body }, context)=>{
             const user = checkAuth(context);
             const newPost = await postModel.create({ body, username: user.username, user: user.id, createdAt: new Date().toISOString() })
-            return newPost;
+            context.pubsub.publish('NEW_POST', {
+                newPost: newPost
+            })
+            return newPost;  
         },
 
         deletePost: async (_, { postId }, context)=>{
@@ -66,24 +70,100 @@ module.exports = {
             const { postId, body } = commentInput;
             const user = checkAuth(context);
 
-            const post = await postModel.findById(postId);
+            try {
+                const post = await postModel.findById(postId);
 
-            if(body.trim()===''){
-                throw new UserInputError('Comment mustn\'t be empty')
-            }
-            if(!post){
-                throw new UserInputError('Post doesn\'t exist ')
-            }else{
-                // can use push inplace of unshift but unshift puts the new one at start 
-                post.comments.unshift({
-                    body,
-                    username: user.username,
-                    createdAt: new Date().toISOString()
-                })
-                await post.save();
-                return post;
+                if(body.trim()===''){
+                    throw new UserInputError('Comment mustn\'t be empty')
+                }
+                if(!post){
+                    throw new UserInputError('Post doesn\'t exist ')
+                }else{
+                    // can use push inplace of unshift but unshift puts the new one at start 
+                    post.comments.unshift({
+                        body,
+                        username: user.username,
+                        createdAt: new Date().toISOString()
+                    })
+                    await post.save();
+                    return post;
+                }
+                
+            } catch (error) {
+                throw new Error(error)
             }
             
+        },
+
+        deleteComment: async (_, { deleteCommentInput }, context)=>{
+            const user = checkAuth(context);
+            const { postId, commentId } = deleteCommentInput;
+
+            try {
+
+                const post = await postModel.findById(postId);
+
+                if(!post){
+                    throw new UserInputError('Post doesn\'t exist ')
+                }else{
+
+                    const commentIndex = post.comments.findIndex((comment)=> comment.id === commentId );
+
+                    if(commentIndex===-1){ throw new UserInputError('No such comment')}
+
+                    if(post.comments[commentIndex].username === user.username){
+                        post.comments.splice(commentIndex, 1);
+                        await post.save();
+                        return post;
+                    }else{
+                        throw new AuthenticationError('Action not allowed');
+                    }
+                    
+                }
+                
+            } catch (error) {
+                throw new Error(error)
+            }
+            
+        },
+
+        likePost: async (_, { postId }, context)=>{
+            const user = checkAuth(context);
+            
+            try {
+                const post = await postModel.findById(postId);
+                
+                if(!post){
+                    throw new UserInputError('No such post')
+                }else{
+                    if(post.likes.find((like)=>like.username === user.username)){
+                        // unlike the post, like already exists from this user
+                        post.likes = post.likes.filter((like)=>like.username !== user.username)
+                    }else{
+                        // like the post
+                        post.likes.push({
+                            username: user.username,
+                            createdAt: new Date().toISOString()
+                        })
+                    }
+                    await post.save();
+                    return post;
+                }
+            } catch (error) {
+                throw new Error(error)
+                
+            }
         }
+    },
+
+    Post: {
+        likesCount: (parent)=> parent.likes.length,
+        commentsCount: (parent)=> parent.comments.length
     }
+
+    // Subscription:{
+    //     newPost: {
+    //         subscribe: (_, __, { pubsub })=> pubsub.asyncIterator('NEW_POST') 
+    //     }
+    // }
 }
