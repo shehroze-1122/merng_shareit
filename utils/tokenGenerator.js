@@ -1,6 +1,6 @@
 const jwt = require('jsonwebtoken')
 
-const { TOKEN_SECRET } = require('../config');
+const { TOKEN_SECRET } = require('../config.js');
 
 module.exports = ( user)=>{
     return jwt.sign({
