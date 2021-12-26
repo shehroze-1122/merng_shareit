@@ -1,6 +1,5 @@
 const { UserInputError } = require('apollo-server')
 const { AuthenticationError } = require('apollo-server');
-const { subscribe } = require('graphql');
 
 const postModel = require('../../models/Post.js')
 const checkAuth = require('../../utils/verify-auth');
@@ -36,10 +35,10 @@ module.exports = {
 
         createPost: async (_, { body }, context)=>{
             const user = checkAuth(context);
+            if(!body){
+                throw new Error('Post cannot be empty')
+            }
             const newPost = await postModel.create({ body, username: user.username, user: user.id, createdAt: new Date().toISOString() })
-            context.pubsub.publish('NEW_POST', {
-                newPost: newPost
-            })
             return newPost;  
         },
 
